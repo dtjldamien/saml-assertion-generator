@@ -7,9 +7,9 @@
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
             "stopOnEntry": false,
-            "mainClass": "com.mycompany.app.App",
+            "mainClass": "com.sf.SAMLAssertionGen.SAMLAssertionGenerator",
             "args": "",
-            "projectName": "my-app"
+            "projectName": "SAMLAssertionGen"
         }
     ]
 }
