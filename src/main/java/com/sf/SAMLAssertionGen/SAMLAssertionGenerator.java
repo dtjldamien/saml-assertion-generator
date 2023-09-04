@@ -31,7 +31,6 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.List;
 import java.util.Properties;
-import java.util.UUID;
 
 public class SAMLAssertionGenerator {
 
@@ -42,8 +41,8 @@ public class SAMLAssertionGenerator {
 		 * input
 		 */
 		{
-			String tokenUrl = null, clientId = null, username = null, privateKey = null, userId = null;
-			boolean useUserNameAsUserId = false;
+			String tokenUrl = null, clientId = null, userId = null, privateKey = null, uuid = null, sessionIndex = null;
+			DateTime currentTime;
 			int expireInMinutes = 10;
 
 			if (args.length == 0) {
@@ -57,23 +56,17 @@ public class SAMLAssertionGenerator {
 				tokenUrl = properties.getProperty("tokenUrl");
 				clientId = properties.getProperty("clientId");
 				userId = properties.getProperty("userId");
-				username = properties.getProperty("userName");
 				privateKey = properties.getProperty("privateKey");
-				expireInMinutes = properties.getProperty("expireInMinutes") != null
-						&& Integer.parseInt(properties.getProperty("expireInMinutes")) > 0
-								? Integer.parseInt(properties.getProperty("expireInMinutes"))
-								: 10;
+				currentTime = new DateTime(properties.getProperty("currentTime"));
+				uuid = properties.getProperty("uuid");
+				sessionIndex = properties.getProperty("sessionIndex");
 
-				if ((userId == null || userId.trim().length() == 0) && (username != null && username.length() != 0)) {
-					System.out.println("Using username as userId..");
-					userId = username;
-					useUserNameAsUserId = true;
-				}
-				if (tokenUrl != null && clientId != null && privateKey != null && userId != null) {
+				if (tokenUrl != null && clientId != null && userId != null && privateKey != null && currentTime != null
+						&& uuid != null && sessionIndex != null) {
 					System.out.println("All properties are set, generating the SAML Assertion...");
 
 					String signedSAMLAssertion = generateSignedSAMLAssertion(clientId, userId, tokenUrl, privateKey,
-							expireInMinutes, useUserNameAsUserId);
+							expireInMinutes, currentTime, uuid, sessionIndex);
 
 					System.out.println("The generated Signed SAML Assertion is:");
 					System.out
@@ -89,12 +82,13 @@ public class SAMLAssertionGenerator {
 	}
 
 	public static String generateSignedSAMLAssertion(String clientId, String username, String tokenUrl,
-			String privateKeyString, int expireInMinutes, boolean userUserNameAsUserId) throws Exception {
+			String privateKeyString, int expireInMinutes, DateTime currentTime, String uuid, String sessionIndex)
+			throws Exception {
 
 		AssertionMarshaller marshaller = new AssertionMarshaller();
 		Element element = null;
 		Assertion unsignedAssertion = buildDefaultAssertion(clientId, username, tokenUrl, expireInMinutes,
-				userUserNameAsUserId);
+				currentTime, uuid, sessionIndex);
 		element = marshaller.marshall(unsignedAssertion);
 		System.out.println("The generated unsigned SAML Assertion is:");
 		System.out.println("-------------------------------------------------------------------------------");
@@ -109,15 +103,14 @@ public class SAMLAssertionGenerator {
 	}
 
 	private static Assertion buildDefaultAssertion(String clientId, String userId, String tokenUrl, int expireInMinutes,
-			boolean userUserNameAsUserId) {
+			DateTime currentTime, String uuid, String sessionIndex) {
 		try {
-			DateTime currentTime = new DateTime();
 			DefaultBootstrap.bootstrap();
 
 			// Create the assertion and set Id, namespace etc.
 			Assertion assertion = create(Assertion.class, Assertion.DEFAULT_ELEMENT_NAME);
 			assertion.setIssueInstant(currentTime);
-			assertion.setID(UUID.randomUUID().toString());
+			assertion.setID(uuid);
 			assertion.setVersion(SAMLVersion.VERSION_20);
 			Namespace xsNS = new Namespace("http://www.w3.org/2001/XMLSchema", "xs");
 			assertion.addNamespace(xsNS);
@@ -125,7 +118,7 @@ public class SAMLAssertionGenerator {
 			assertion.addNamespace(xsiNS);
 
 			Issuer issuer = create(Issuer.class, Issuer.DEFAULT_ELEMENT_NAME);
-			issuer.setValue("www.successfactors.com");
+			issuer.setValue("app.workato.com");
 			assertion.setIssuer(issuer);
 
 			// Create the subject and add it to assertion
@@ -161,7 +154,7 @@ public class SAMLAssertionGenerator {
 			// Create the AuthnStatement and add it to assertion
 			AuthnStatement authnStatement = create(AuthnStatement.class, AuthnStatement.DEFAULT_ELEMENT_NAME);
 			authnStatement.setAuthnInstant(currentTime);
-			authnStatement.setSessionIndex(UUID.randomUUID().toString());
+			authnStatement.setSessionIndex(sessionIndex);
 			AuthnContext authContext = create(AuthnContext.class, AuthnContext.DEFAULT_ELEMENT_NAME);
 			AuthnContextClassRef authnContextClassRef = create(AuthnContextClassRef.class,
 					AuthnContextClassRef.DEFAULT_ELEMENT_NAME);
@@ -176,15 +169,6 @@ public class SAMLAssertionGenerator {
 			Attribute apiKeyAttribute = createAttribute("api_key", clientId);
 			attributeStatement.getAttributes().add(apiKeyAttribute);
 			assertion.getAttributeStatements().add(attributeStatement);
-
-			// Set user_username as true while using username as userId
-			if (userUserNameAsUserId) {
-				AttributeStatement useUserNameAsUserIdStatement = create(AttributeStatement.class,
-						AttributeStatement.DEFAULT_ELEMENT_NAME);
-				Attribute useUserNameKeyAttribute = createAttribute("use_username", "true");
-				useUserNameAsUserIdStatement.getAttributes().add(useUserNameKeyAttribute);
-				assertion.getAttributeStatements().add(useUserNameAsUserIdStatement);
-			}
 
 			return assertion;
 		} catch (Exception e) {
@@ -295,6 +279,17 @@ public class SAMLAssertionGenerator {
 		if (null != strs && strs.length == 2) {
 			privateKeyString = strs[0];
 		}
+
+		System.out.println("The privateKeyString is:");
+		System.out.println("-------------------------------------------------------------------------------");
+		System.out.println(privateKeyString);
+		System.out.println("-------------------------------------------------------------------------------");
+
+		System.out.println("The decoded privateKeyString is:");
+		System.out.println("-------------------------------------------------------------------------------");
+		System.out.println(Base64.decodeBase64(privateKeyString));
+		System.out.println("-------------------------------------------------------------------------------");
+
 		PKCS8EncodedKeySpec privateKeySpec = new PKCS8EncodedKeySpec(Base64.decodeBase64(privateKeyString));
 		PrivateKey privateKey = null;
 		try {
